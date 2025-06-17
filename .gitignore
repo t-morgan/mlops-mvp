@@ -88,3 +88,6 @@ override.tf.json
 # Cache files
 .ivy2/
 .cache/
+
+# Logs
+logs/

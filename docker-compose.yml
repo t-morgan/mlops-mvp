@@ -1,5 +1,27 @@
 version: '3.8'
 
+x-airflow-common: &airflow-common
+  build: 
+    context: .
+    dockerfile: ./infrastructure/docker/airflow/Dockerfile
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    # Credentials for all tasks running within Airflow
+    - AWS_ACCESS_KEY_ID=minioadmin
+    - AWS_SECRET_ACCESS_KEY=minioadmin
+    - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+    # Airflow database connection
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    - MLFLOW_TRACKING_URI=http://mlflow:5000
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+  depends_on:
+    - postgres
+    - minio
+
 services:
   postgres:
     image: postgres:13
@@ -7,13 +29,20 @@ services:
     ports:
       - "5432:5432"
     environment:
+      # Credentials for MLflow DB
       - POSTGRES_USER=mlflow
       - POSTGRES_PASSWORD=mlflow
       - POSTGRES_DB=mlflow
+      # Credentials for Airflow DB
+      - POSTGRES_MULTIPLE_DATABASES=mlflow,airflow
+      - POSTGRES_AIRFLOW_USER=airflow
+      - POSTGRES_AIRFLOW_PASSWORD=airflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Script to create multiple databases
+      - ./scripts/setup/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/create-multiple-postgresql-databases.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mlflow"]
+      test: ["CMD-SHELL", "pg_isready -U mlflow && pg_isready -U airflow"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -45,7 +74,8 @@ services:
       - AWS_ACCESS_KEY_ID=minioadmin
       - AWS_SECRET_ACCESS_KEY=minioadmin
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
-      
+      - AWS_DEFAULT_REGION=us-east-1
+      - MLFLOW_S3_IGNORE_TLS=true
     command: >
       mlflow server
       --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
@@ -57,15 +87,52 @@ services:
       minio:
         condition: service_healthy
 
-
   create-buckets:
     image: minio/mc
     depends_on:
       minio:
         condition: service_healthy
-    volumes:
-      - ./scripts/setup/init-buckets.sh:/init-buckets.sh
-    entrypoint: /init-buckets.sh
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/mlflow --ignore-existing;
+      /usr/bin/mc mb myminio/delta --ignore-existing;
+      /usr/bin/mc anonymous set-download myminio/mlflow;
+      /usr/bin/mc anonymous set-download myminio/delta;
+      exit 0;
+      "
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--local"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow_webserver
+    ports:
+      - "8080:8080"
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow_init
+    entrypoint: /bin/sh
+    command: -c "airflow db init && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:

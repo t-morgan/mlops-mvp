@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  airflow-scheduler:
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      # Mount our local source code directly into the container.
+      - ./src:/opt/airflow/src
+    environment:
+      # Tell Python to add our source directory to its search path.
+      - PYTHONPATH=/opt/airflow
+
+  airflow-webserver:
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/src
+    environment:
+      - PYTHONPATH=/opt/airflow

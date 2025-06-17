@@ -1,15 +1,16 @@
-# MLOps Monorepo Platform: PySpark + MLflow
+# MLOps Monorepo Platform: PySpark + MLflow + Airflow
 
-This repository contains a comprehensive, production-style MLOps platform built as a monorepo. It integrates PySpark for distributed data processing with MLflow for end-to-end machine learning lifecycle management.
+This repository contains a comprehensive, production-style MLOps platform built as a monorepo. It integrates PySpark for distributed data processing, MLflow for end-to-end machine learning lifecycle management, and Apache Airflow for robust pipeline orchestration.
 
-This MVP demonstrates a complete ML pipeline from data ingestion to batch inference, showcasing a core developer workflow for building, tracking, and using models in a robust, reproducible, and scalable environment.
+This MVP demonstrates a complete, orchestrated ML pipeline from data ingestion to batch inference, showcasing a core developer workflow for building, tracking, deploying, and using models in a robust, reproducible, and automated environment.
 
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
 - [Monorepo Structure](#monorepo-structure)
 - [Local Development Setup](#local-development-setup)
-- [Running the MVP Pipeline](#running-the-mvp-pipeline)
+- [Running the Orchestrated Pipeline with Airflow](#running-the-orchestrated-pipeline-with-airflow)
+- [Manual Development Workflow (Without Airflow)](#manual-development-workflow-without-airflow)
 - [Core Concepts Demonstrated](#core-concepts-demonstrated)
 - [Next Steps & Production Considerations](#next-steps--production-considerations)
 
@@ -23,11 +24,12 @@ This platform is designed around a set of core, open-source tools orchestrated f
 * **ML Lifecycle Management**:
 * **MLflow Tracking**: For logging experiments, parameters, metrics, and code versions.
 * **MLflow Model Registry**: For versioning, staging, and managing trained models.
-* **MLflow Projects**: For packaging code for reproducible runs.
+* **Workflow Orchestration**:
+* **Apache Airflow**: For scheduling, executing, and monitoring the entire ML pipeline, including steps that require manual intervention.
 * **Infrastructure (Local Simulation)**:
 * **Docker Compose**: To orchestrate all backend services for local development.
 * **MinIO**: As an S3-compatible object store for MLflow artifacts and Delta Lake tables.
-* **PostgreSQL**: As a robust backend store for MLflow metadata (experiments, models).
+* **PostgreSQL**: As a robust backend store for both MLflow and Airflow metadata.
 
 ![Architecture Diagram](docs/architecture.png)
 *(Note: You can create a simple diagram using a tool like diagrams.net and place it in the `docs/` folder)*
@@ -38,17 +40,13 @@ The repository is structured to separate concerns, making it scalable and easy t
 
 ```
 mlops-platform/
-├── .github/ # CI/CD workflows (e.g., testing, deployment)
-├── configs/ # Environment/tool specific configurations
-├── docs/ # Project documentation
-├── infrastructure/ # IaC (Terraform) and container definitions (Docker)
-├── notebooks/ # Jupyter notebooks for exploration and analysis
+├── dags/ # Airflow DAG definitions
+├── infrastructure/ # Container definitions (Docker)
+├── plugins/ # Custom Airflow plugins (e.g., sensors)
 ├── scripts/ # Helper scripts for setup, deployment, etc.
 ├── src/ # Main source code for pipelines and utilities
-└── tests/ # Unit, integration, and end-to-end tests
+└── ... (other folders like docs, tests, notebooks)
 ```
-
-For a detailed file-by-file breakdown, see the `docs/` directory.
 
 ## Local Development Setup
 
@@ -57,31 +55,42 @@ Follow these steps to set up the complete MLOps environment on your local machin
 ### Prerequisites
 
 * [Docker](https://www.docker.com/products/docker-desktop/) and Docker Compose
-* [Python 3.9+](https://www.python.org/downloads/)
+* [Python 3.11+](https://www.python.org/downloads/)
 * `git`
 
-### Step 1: Clone the Repository
+### Step 1: Clone the Repository & Configure Credentials
 
 ```bash
 git clone <your-repo-url>
 cd mlops-platform
+
+# For local development, boto3 (used by MLflow and Spark) needs to know
+# how to connect to MinIO. The cleanest way is a config file.
+# Create the config directory:
+mkdir -p ~/.aws
+
+# Create the config file (~/.aws/config):
+cat > ~/.aws/config << EOL
+[default]
+region = us-east-1
+s3 =
+endpoint_url = http://localhost:9000
+signature_version = s3v4
+s3api =
+endpoint_url = http://localhost:9000
+EOL
+
+# Create the credentials file (~/.aws/credentials):
+cat > ~/.aws/credentials << EOL
+[default]
+aws_access_key_id = minioadmin
+aws_secret_access_key = minioadmin
+EOL
 ```
 
-### Step 2: Start Backend Services
+### Step 2: Set Up Python Virtual Environment
 
-This command uses Docker Compose to build and start the MLflow server, PostgreSQL database, and MinIO object store.
-
-```bash
-docker-compose up -d --build
-```
-
-After startup, you can access the services:
-* **MLflow UI**: `http://localhost:5000`
-* **MinIO Console**: `http://localhost:9001` (Login with `minioadmin` / `minioadmin`)
-
-### Step 3: Set Up Python Virtual Environment
-
-It is crucial to use a virtual environment to manage dependencies and avoid conflicts.
+It is crucial to use a virtual environment to manage dependencies for local testing and IDE support.
 
 ```bash
 # Create the virtual environment
@@ -91,75 +100,71 @@ python3 -m venv venv
 source venv/bin/activate
 # On Windows: venv\Scripts\activate
 
-# Install all required packages
+# Install all required packages, including Airflow for IDE support
 pip install -r requirements.txt
 
 # Install the local 'src' code as an editable package
 pip install -e .
 ```
 
-## Running the MVP Pipeline
+### Step 3: Start All Backend Services
 
-This demonstrates the end-to-end workflow. Each script should be run from the root of the project directory.
-
-### 1. Data Processing Pipeline
-
-This script uses PySpark to ingest the Iris dataset, process it, and save it as a Delta table in MinIO.
+This command builds the custom Docker images and starts the entire backend stack: MLflow, MinIO, PostgreSQL, and Airflow.
 
 ```bash
-python src/pipelines/data_pipeline.py
+docker-compose up -d --build
 ```
-* **Verify**: Check the MinIO console (`http://localhost:9001`). You should see a `delta` bucket containing the `iris/` table.
+*Note: The first build may take several minutes as it installs Java and Python dependencies.*
 
-### 2. Model Training Pipeline
+After startup, you can access the services:
+* **Airflow UI**: `http://localhost:8080` (Login: `admin` / `admin`)
+* **MLflow UI**: `http://localhost:5000`
+* **MinIO Console**: `http://localhost:9001` (Login: `minioadmin` / `minioadmin`)
 
-This script reads the data from the Delta table, trains an XGBoost model, and logs the experiment, artifacts, and registered model to MLflow.
+## Running the Orchestrated Pipeline with Airflow
 
-**Note**: This script requires credentials to upload model artifacts directly to MinIO.
+This is the primary, intended workflow for the platform.
 
+### Step 1: Trigger the Training DAG
+
+1. In the Airflow UI (`http://localhost:8080`), find and un-pause the **`ml_training_dag`**.
+2. Click the "Play" button (▶️) to trigger a new run.
+3. Watch as the `run_data_pipeline` and `run_training_pipeline` tasks execute and succeed. This will create a new model version in MLflow, staged as "None".
+
+### Step 2: Perform Manual Model Review and Promotion
+
+This step simulates the critical human-in-the-loop validation process.
+
+1. Go to the MLflow UI (`http://localhost:5000`) and review the latest run's metrics and artifacts.
+2. If the model is acceptable, navigate to the **Models** tab, find the latest version of `iris_xgboost_classifier`, and use the **Stage** dropdown to promote it to **Staging**.
+
+### Step 3: Trigger the Inference DAG
+
+1. In the Airflow UI, find and un-pause the **`ml_inference_dag`**.
+2. Trigger a new run.
+3. The first task, `wait_for_model_in_staging`, will start. It will poll the MLflow server every 30 seconds.
+4. Once you complete Step 2, this sensor will detect the change, turn green, and automatically trigger the final `run_inference_pipeline` task.
+
+You have now successfully executed the entire orchestrated pipeline, including a manual validation gate.
+
+## Manual Development Workflow (Without Airflow)
+
+For rapid development and debugging of a single script, you can run them directly from your local machine.
+
+1. Ensure services are running: `docker-compose up -d`.
+2. Activate your `venv`: `source venv/bin/activate`.
+3. Run any pipeline script directly:
 ```bash
-AWS_ACCESS_KEY_ID=minioadmin \
-AWS_SECRET_ACCESS_KEY=minioadmin \
-MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 \
+# Example: Run just the training pipeline
 python src/pipelines/training_pipeline.py
 ```
-* **Verify**: Check the MLflow UI (`http://localhost:5000`). You will see a new run and a new registered model named `iris_xgboost_classifier`.
-
-### 3. Promote the Model
-
-In a real workflow, a model would be validated before promotion. For this MVP, we will promote it manually.
-1. Go to the **Models** tab in the MLflow UI.
-2. Click on `iris_xgboost_classifier`.
-3. Click on **Version 1**.
-4. Use the **Stage** dropdown to transition the model to **Staging**.
-
-### 4. Batch Inference Pipeline
-
-This script loads the `Staging` model from the registry and uses it to perform batch inference on the Iris dataset.
-
-```bash
-AWS_ACCESS_KEY_ID=minioadmin \
-AWS_SECRET_ACCESS_KEY=minioadmin \
-MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 \
-python src/pipelines/inference_pipeline.py
-```
-* **Verify**: Check the MinIO console. You will now see a new table at `delta/iris_predictions/` containing the original data plus a `prediction` column.
+The code is designed to use `localhost` endpoints when run locally and container service names when run via Airflow.
 
 ## Core Concepts Demonstrated
 
-- **Infrastructure as Code**: All services are defined in `docker-compose.yml`.
-- **Data Versioning**: Using Delta Lake to store and manage datasets.
-- **Experiment Tracking**: Using MLflow to log every aspect of a training run.
-- **Model Registry**: A central repository for managing and versioning model lifecycle.
-- **Reproducibility**: Packaging code and dependencies ensures that pipelines can be re-run reliably.
-- **Separation of Concerns**: The monorepo cleanly separates infrastructure, application code, tests, and documentation.
-
-## Next Steps & Production Considerations
-
-This MVP provides a solid foundation. A full production system would expand on this with:
-* **CI/CD Automation**: Implement GitHub Actions (`.github/workflows`) to run tests on PRs and automate training/deployment pipelines.
-* **Cloud Deployment**: Use Terraform (`infrastructure/terraform`) to provision managed services (e.g., EKS/GKE, RDS, S3) in the cloud.
-* **Workflow Orchestration**: Use a tool like Apache Airflow to schedule and manage dependencies between the data, training, and inference pipelines.
-* **Real-time Serving**: Deploy the model as a REST API using MLflow's serving capabilities or a dedicated framework like FastAPI, running as a service in Kubernetes.
-* **Monitoring**: Implement pipelines to monitor for data drift, concept drift, and model performance degradation.
-* **Comprehensive Testing**: Add unit, integration, and end-to-end tests in the `tests/` directory.
+- **Infrastructure as Code**: All services are defined and configured in `docker-compose.yml`.
+- **Immutable Infrastructure**: Custom Docker images bake in all system and Python dependencies for a reproducible runtime environment.
+- **Orchestration**: Airflow manages the entire workflow, including dependencies and manual gates.
+- **Custom Extensibility**: A custom Airflow Sensor (`plugins/mlflow_sensors.py`) integrates directly with an external system (MLflow) to control pipeline flow.
+- **Configuration as Code**: Key configurations (like URIs) are managed with environment variables, separating them from the application logic.
+- **Separation of Concerns**: The two-DAG approach cleanly separates the model training lifecycle from the model deployment/inference lifecycle.

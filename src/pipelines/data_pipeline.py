@@ -13,7 +13,7 @@ DELTA_TABLE_PATH = "s3a://delta/iris"
 
 
 def run_data_pipeline():
-    print("Starting data pipeline with No-Pandas data preparation...")
+    print("Starting data pipeline...")
     spark = get_spark_session("DataPipeline")
 
     # 1. Load raw data from scikit-learn
