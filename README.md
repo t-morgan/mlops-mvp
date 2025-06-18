@@ -30,6 +30,9 @@ This platform is designed around a set of core, open-source tools orchestrated f
 * **Docker Compose**: To orchestrate all backend services for local development.
 * **MinIO**: As an S3-compatible object store for MLflow artifacts and Delta Lake tables.
 * **PostgreSQL**: As a robust backend store for both MLflow and Airflow metadata.
+* **Real-Time Serving**:
+* **FastAPI**: A high-performance web framework for building APIs.
+* **Uvicorn**: An ASGI server to run the FastAPI application.
 
 ![Architecture Diagram](docs/architecture.png)
 *(Note: You can create a simple diagram using a tool like diagrams.net and place it in the `docs/` folder)*
@@ -90,24 +93,30 @@ EOL
 
 ### Step 2: Set Up Python Virtual Environment
 
-It is crucial to use a virtual environment to manage dependencies for local testing and IDE support.
+Our services (Airflow and FastAPI) have conflicting dependencies. It is impossible to create a single local environment for all of them. The recommended approach is to set up your local `venv` to match the **FastAPI server** for rapid API development. Airflow will be managed entirely by Docker.
 
 ```bash
 # Create the virtual environment
 python3 -m venv venv
 
-# Activate it (on macOS/Linux)
+# Activate it
 source venv/bin/activate
-# On Windows: venv\Scripts\activate
 
-# Install all required packages, including Airflow for IDE support
-pip install -r requirements.txt
+# Install dependencies for the API server and our core ML logic
+pip install -r requirements/api.txt
 
 # Install the local 'src' code as an editable package
 pip install -e .
 ```
+Your IDE will now provide full support for editing the API and core pipeline code. It may show an "unresolved import" error for `apache-airflow` in your DAG files; this is expected and can be ignored.
 
 ### Step 3: Start All Backend Services
+
+The first time we set up the environment, we need to initialize Airflow
+
+```bash
+docker-compose up airflow-init
+```
 
 This command builds the custom Docker images and starts the entire backend stack: MLflow, MinIO, PostgreSQL, and Airflow.
 
@@ -146,6 +155,45 @@ This step simulates the critical human-in-the-loop validation process.
 4. Once you complete Step 2, this sensor will detect the change, turn green, and automatically trigger the final `run_inference_pipeline` task.
 
 You have now successfully executed the entire orchestrated pipeline, including a manual validation gate.
+
+### Step 4: Promote Model to Production
+
+The final step in the model lifecycle is to promote our validated "Staging" model to "Production".
+
+1. In the MLflow UI, go to the model version you previously promoted to "Staging".
+2. Use the **Stage** dropdown to transition it to **Production**.
+3. Restart the FastAPI server to pick up the new model:
+```bash
+docker-compose restart fastapi-server
+```
+The server is designed to load the "Production" model on startup.
+
+### Step 5: Test the Real-time API
+
+Our FastAPI server is now serving the production model.
+
+1. **Interactive API Docs (Swagger UI)**:
+* Open your browser to `http://localhost:8001/docs`.
+* You can explore the endpoints, view the schemas, and even send test requests directly from the UI.
+
+2. **Using `curl` from your Terminal**:
+* Send a sample prediction request:
+```bash
+curl -X POST "http://localhost:8001/predict" \
+-H "Content-Type: application/json" \
+-d '{
+"sepal_length": 5.1,
+"sepal_width": 3.5,
+"petal_length": 1.4,
+"petal_width": 0.2
+}'
+```
+* You should receive a response like:
+```json
+{"prediction":0}
+```
+
+You have now completed the entire MLOps cycle: from data processing and orchestrated training to manual validation and deployment as a live, real-time API.
 
 ## Manual Development Workflow (Without Airflow)
 

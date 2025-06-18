@@ -1,17 +1,14 @@
 ARG AIRFLOW_VERSION=2.8.4
 
 # --- Build Stage ---
-# This stage prepares our installable Python package (a .whl file)
 FROM python:3.11-slim AS builder
 
 WORKDIR /wheelhouse
 
-# Copy files needed to build the wheel
 COPY pyproject.toml .
 COPY README.md .
 COPY src/ ./src/
 
-# Install build dependencies and create the wheel file
 RUN pip install build && python -m build
 
 # --- Final Airflow Stage ---
@@ -27,25 +24,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 USER airflow
 
-
 WORKDIR /opt/airflow
 
-# Install Python dependencies from requirements.txt first
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r ./requirements.txt --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-3.11.txt"
+COPY requirements/core.txt ./requirements/
+COPY requirements/airflow.txt ./requirements/
 
-# Copy the built wheel from the 'builder' stage
+RUN pip install --no-cache-dir -r ./requirements/airflow.txt --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-3.11.txt"
+
 COPY --from=builder /wheelhouse/dist/*.whl .
+RUN pip install --no-cache-dir ./*.whl && rm ./*.whl
 
-# Copy plugins
-COPY plugins/ ./plugins/
-
-# Install our project from the wheel file
-RUN pip install --no-cache-dir ./*.whl && \
-    # Clean up the wheel file after installation
-    rm ./*.whl
-
-# Set the ownership of the home directory to the airflow user.
 USER root
 RUN chown -R airflow: /opt/airflow
 USER airflow

@@ -1,0 +1,5 @@
+# Base requirements for ML logic
+-r core.txt
+
+# Airflow specific dependencies
+apache-airflow==2.8.4
