@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import mlflow
 import numpy as np
+from contextlib import asynccontextmanager
+from prometheus_fastapi_instrumentator import Instrumentator
 
 
 class IrisRequest(BaseModel):
@@ -17,29 +19,50 @@ class PredictionResponse(BaseModel):
     prediction: int
 
 
-app = FastAPI(
-    title="Iris Model API",
-    description="API for serving the Iris XGBoost classifier.",
-    version="1.0.0",
-)
+
 model = None
 MODEL_NAME = "iris_xgboost_classifier"
 MODEL_STAGE = "Production"
 
-
-@app.on_event("startup")
-def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # This block of code runs ONCE, on startup
     global model
+    print("--- Running application startup logic ---")
+
+    # Configure MLflow client
     mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
     if mlflow_tracking_uri:
         mlflow.set_tracking_uri(mlflow_tracking_uri)
+        print(f"Connected to MLflow Tracking Server at {mlflow_tracking_uri}")
+    else:
+        print("Warning: MLFLOW_TRACKING_URI not set.")
+
     model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
+
     try:
+        print(f"Loading model from: {model_uri}")
         model = mlflow.pyfunc.load_model(model_uri)
         print("Model loaded successfully.")
     except mlflow.exceptions.MlflowException as e:
-        print(f"API will start without a loaded model: {e}")
+        print(f"Error loading model: {e}")
+        print("API will start without a loaded model.")
 
+    # The 'yield' statement separates startup logic from shutdown logic
+    yield
+
+    # This block of code runs ONCE, on shutdown (not used here, but good practice)
+    print("--- Running application shutdown logic ---")
+    model = None
+
+app = FastAPI(
+    title="Iris Model API",
+    description="API for serving the Iris XGBoost classifier.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+Instrumentator().instrument(app).expose(app)
 
 # --- API Endpoints ---
 @app.get("/", tags=["Health"])

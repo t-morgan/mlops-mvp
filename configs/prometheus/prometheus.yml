@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape our FastAPI server
+  # The service name 'fastapi-server' is resolved by Docker's DNS
+  - job_name: 'fastapi-server'
+    static_configs:
+      - targets: ['fastapi-server:8000']
+      
+  # Scrape the Pushgateway for metrics from batch jobs
+  - job_name: 'pushgateway'
+    honor_labels: true # Important for metrics pushed from jobs
+    static_configs:
+      - targets: ['pushgateway:9091']

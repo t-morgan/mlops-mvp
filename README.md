@@ -9,7 +9,8 @@ This MVP demonstrates a complete, orchestrated ML pipeline from data ingestion t
 - [Architecture Overview](#architecture-overview)
 - [Monorepo Structure](#monorepo-structure)
 - [Local Development Setup](#local-development-setup)
-- [Running the Orchestrated Pipeline with Airflow](#running-the-orchestrated-pipeline-with-airflow)
+- [Running the Full MLOps Lifecycle](#running-the-full-mlops-lifecycle)
+- [Observability & Monitoring](#observability--monitoring)
 - [Manual Development Workflow (Without Airflow)](#manual-development-workflow-without-airflow)
 - [Core Concepts Demonstrated](#core-concepts-demonstrated)
 - [Next Steps & Production Considerations](#next-steps--production-considerations)
@@ -130,7 +131,7 @@ After startup, you can access the services:
 * **MLflow UI**: `http://localhost:5000`
 * **MinIO Console**: `http://localhost:9001` (Login: `minioadmin` / `minioadmin`)
 
-## Running the Orchestrated Pipeline with Airflow
+## Running the Full MLOps Lifecycle
 
 This is the primary, intended workflow for the platform.
 
@@ -193,7 +194,43 @@ curl -X POST "http://localhost:8001/predict" \
 {"prediction":0}
 ```
 
-You have now completed the entire MLOps cycle: from data processing and orchestrated training to manual validation and deployment as a live, real-time API.
+### Step 6: Monitor the System
+
+1. In the Airflow UI, un-pause the **`model_monitoring_dag`**. It will now run every 15 minutes, calculating drift metrics.
+2. Go to the Grafana UI (`http://localhost:3000`) to view the health of the API server and the model drift metrics pushed by the monitoring pipeline.
+
+## Observability & Monitoring
+
+The platform includes a full observability stack using Prometheus and Grafana to monitor both service health and model performance.
+
+**Services:**
+* **Prometheus**: (`http://localhost:9090`) Scrapes and stores metrics.
+* **Grafana**: (`http://localhost:3000`) Visualizes metrics in dashboards (Login: `admin` / `admin`).
+* **Pushgateway**: (`http://localhost:9091`) A cache for metrics from short-lived jobs.
+
+### Available Metrics
+
+1. **FastAPI Server Health**: The API server automatically exposes metrics at its `/metrics` endpoint. These include:
+* `fastapi_requests_total`: Total number of requests.
+* `fastapi_requests_latency_seconds`: Latency histogram of requests.
+* `fastapi_requests_in_progress`: Number of currently active requests.
+
+2. **Model Data Drift**: The `model_monitoring_dag` runs every 15 minutes. It calculates a Kolmogorov-Smirnov (K-S) statistic and p-value for the `sepal_length` feature to detect data drift and pushes these metrics to Prometheus.
+
+### Setting Up a Grafana Dashboard
+
+1. Go to the Grafana UI at `http://localhost:3000`.
+2. **Add Data Source**:
+* Go to Connections -> Data sources -> Add new data source.
+* Select **Prometheus**.
+* For the "Prometheus server URL", enter `http://prometheus:9090`.
+* Click "Save & Test". You should see a "Data source is working" message.
+3. **Create a Dashboard**:
+* Go to Dashboards -> New Dashboard -> Add visualization.
+* Select your "Prometheus" data source.
+* In the "Metrics browser" input, you can now type `sepal_length` to see the drift metrics, or `fastapi` to see the API health metrics.
+* Example Query for p-value: `sepal_length_p_value`
+* Example Query for API request rate: `rate(fastapi_requests_total[5m])`
 
 ## Manual Development Workflow (Without Airflow)
 
@@ -210,9 +247,24 @@ The code is designed to use `localhost` endpoints when run locally and container
 
 ## Core Concepts Demonstrated
 
-- **Infrastructure as Code**: All services are defined and configured in `docker-compose.yml`.
+- **End-to-End MLOps Lifecycle**: The project covers the full cycle: data -> training -> validation -> deployment -> monitoring -> retraining.
+- **Infrastructure as Code**: All services (ML, orchestration, observability) are defined and configured in `docker-compose.yml`.
 - **Immutable Infrastructure**: Custom Docker images bake in all system and Python dependencies for a reproducible runtime environment.
-- **Orchestration**: Airflow manages the entire workflow, including dependencies and manual gates.
+- **Workflow Orchestration**: Airflow manages the entire workflow, including dependencies, scheduling, and gates for manual intervention.
 - **Custom Extensibility**: A custom Airflow Sensor (`plugins/mlflow_sensors.py`) integrates directly with an external system (MLflow) to control pipeline flow.
-- **Configuration as Code**: Key configurations (like URIs) are managed with environment variables, separating them from the application logic.
-- **Separation of Concerns**: The two-DAG approach cleanly separates the model training lifecycle from the model deployment/inference lifecycle.
+- **Separation of Concerns**: Decoupled DAGs for training and inference, and separate dependency files for each service, demonstrate a robust, scalable architecture.
+- **Configuration as Code**: Key configurations (like URIs and endpoints) are managed with environment variables, separating them from application logic.
+- **Full-Stack Observability**: The Prometheus/Grafana stack provides monitoring for both low-level service metrics (latency, errors) and high-level ML metrics (data drift).
+
+## Next Steps & Production Considerations
+
+This MVP provides a solid foundation. A full production system would expand on this with:
+* **CI/CD Automation**: Implement GitHub Actions (`.github/workflows`) to run tests on PRs and automate the building and deployment of Docker images to a container registry (e.g., ECR, GCR).
+* **Cloud Deployment**: Use Terraform (`infrastructure/terraform`) to provision managed services (e.g., EKS/GKE for compute, RDS for databases, S3 for storage) in the cloud.
+* **Advanced Monitoring & Alerting**:
+* Expand the `monitoring_pipeline` to calculate concept drift and model performance metrics (e.g., accuracy, F1-score) by joining predictions with ground truth labels.
+* Set up alerting rules in Prometheus/Grafana to notify the team of API errors, high latency, or significant model drift.
+* **Scalable Spark Execution**: For large datasets, configure Airflow to submit Spark jobs to a dedicated Spark cluster on Kubernetes or a cloud service (e.g., EMR, Databricks) instead of running Spark in the worker container.
+* **Comprehensive Testing**: Add a full suite of unit, integration, and end-to-end tests in the `tests/` directory.
+* **Secret Management**: Replace hardcoded credentials with a secure secret management solution like HashiCorp Vault, AWS Secrets Manager, or Doppler.
+* **Blue-Green/Canary Deployments**: Implement more sophisticated API deployment strategies instead of a simple restart to ensure zero downtime.
