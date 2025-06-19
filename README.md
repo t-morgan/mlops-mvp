@@ -35,8 +35,6 @@ This platform is designed around a set of core, open-source tools orchestrated f
 * **FastAPI**: A high-performance web framework for building APIs.
 * **Uvicorn**: An ASGI server to run the FastAPI application.
 
-![Architecture Diagram](docs/architecture.png)
-*(Note: You can create a simple diagram using a tool like diagrams.net and place it in the `docs/` folder)*
 
 ## Monorepo Structure
 
@@ -65,7 +63,7 @@ Follow these steps to set up the complete MLOps environment on your local machin
 ### Step 1: Clone the Repository & Configure Credentials
 
 ```bash
-git clone <your-repo-url>
+git clone git@github.com:t-morgan/mlops-mvp.git
 cd mlops-platform
 
 # For local development, boto3 (used by MLflow and Spark) needs to know
