@@ -3,6 +3,7 @@ import xgboost as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
+from pyspark.sql import SparkSession
 
 from common.spark_utils import get_spark_session
 from common.mlflow_utils import setup_mlflow
@@ -12,7 +13,7 @@ DELTA_TABLE_PATH = "s3a://delta/iris"
 MODEL_NAME = "iris_xgboost_classifier"
 
 
-def run_training_pipeline():
+def run_iris_training_pipeline(data_path=DELTA_TABLE_PATH, model_name=MODEL_NAME, spark: SparkSession = None):
     """
     1. Reads data from the Delta table.
     2. Trains an XGBoost classifier.
@@ -20,12 +21,15 @@ def run_training_pipeline():
     4. Registers the model in the MLflow Model Registry.
     """
     print("Starting training pipeline...")
-    setup_mlflow()
-    spark = get_spark_session("TrainingPipeline")
+    setup_mlflow(experiment_name="iris_classification_experiment")
+    spark_was_provided = spark is not None
+    if not spark_was_provided:
+        spark = get_spark_session("IrisTrainingPipeline")
+    
 
     # 1. Read data from Delta Lake
-    print(f"Reading data from Delta table: {DELTA_TABLE_PATH}")
-    df_spark = spark.read.format("delta").load(DELTA_TABLE_PATH)
+    print(f"Reading data from Delta table: {data_path}")
+    df_spark = spark.read.format("delta").load(data_path)
     df_pandas = df_spark.toPandas()
     print(f"Successfully loaded {len(df_pandas)} records.")
 
@@ -44,7 +48,7 @@ def run_training_pipeline():
     # MLflow Tracking
     with mlflow.start_run(run_name="XGBoost_Training_Run") as run:
         print(f"MLflow Run ID: {run.info.run_id}")
-        mlflow.log_param("data_path", DELTA_TABLE_PATH)
+        mlflow.log_param("data_path", data_path)
 
         # 3. Train Model
         params = {
@@ -81,13 +85,14 @@ def run_training_pipeline():
         mlflow.xgboost.log_model(
             xgb_model=model,
             artifact_path="model",
-            registered_model_name=MODEL_NAME,  # This will create and register the model
+            registered_model_name=model_name,  # This will create and register the model
         )
-        print(f"Model '{MODEL_NAME}' registered in MLflow Model Registry.")
+        print(f"Model '{model_name}' registered in MLflow Model Registry.")
 
     print("Training pipeline finished successfully.")
-    spark.stop()
+    if not spark_was_provided:
+        spark.stop()
 
 
 if __name__ == "__main__":
-    run_training_pipeline()
+    run_iris_training_pipeline()

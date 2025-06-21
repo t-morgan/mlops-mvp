@@ -6,15 +6,18 @@ from pyspark.sql.types import (
     IntegerType,
     StringType,
 )
+from pyspark.sql import SparkSession
 
 from common.spark_utils import get_spark_session
 
 DELTA_TABLE_PATH = "s3a://delta/iris"
 
 
-def run_data_pipeline():
+def run_iris_data_pipeline(output_path=DELTA_TABLE_PATH, spark: SparkSession = None):
     print("Starting data pipeline...")
-    spark = get_spark_session("DataPipeline")
+    spark_was_provided = spark is not None
+    if not spark_was_provided:
+        spark = get_spark_session("IrisDataPipeline")
 
     # 1. Load raw data from scikit-learn
     print("Loading raw NumPy data from scikit-learn...")
@@ -68,17 +71,18 @@ def run_data_pipeline():
     df_spark.show(5)
 
     # 7. Write to Delta Lake
-    print(f"Writing data to Delta table at: {DELTA_TABLE_PATH}")
+    print(f"Writing data to Delta table at: {output_path}")
     (
         df_spark.write.format("delta")
         .mode("overwrite")
         .option("overwriteSchema", "true")
-        .save(DELTA_TABLE_PATH)
+        .save(output_path)
     )
 
     print("Data pipeline finished successfully.")
-    spark.stop()
+    if not spark_was_provided:
+        spark.stop()
 
 
 if __name__ == "__main__":
-    run_data_pipeline()
+    run_iris_data_pipeline()

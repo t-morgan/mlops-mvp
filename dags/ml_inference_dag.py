@@ -32,7 +32,7 @@ with DAG(
     # Task to run the batch inference pipeline
     run_inference_pipeline = BashOperator(
         task_id="run_inference_pipeline",
-        bash_command="python -m pipelines.inference_pipeline",
+        bash_command="python -m pipelines.iris_inference_pipeline",
     )
 
     # The dependency is now on our custom sensor

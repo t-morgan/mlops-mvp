@@ -1,6 +1,7 @@
 import pandas as pd
 from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 from scipy.stats import ks_2samp
+from pyspark.sql import SparkSession
 
 from common.spark_utils import get_spark_session
 
@@ -35,17 +36,19 @@ def calculate_data_drift(
     return drift_scores
 
 
-def run_monitoring_pipeline():
+def run_monitoring_pipeline(data_path=DELTA_TABLE_PATH, pushgateway_url=PUSHGATEWAY_URL, spark: SparkSession = None):
     """
     1. Loads reference and "production" data.
     2. Calculates data drift metrics.
     3. Pushes these metrics to the Prometheus Pushgateway.
     """
     print("Starting model monitoring pipeline...")
-    spark = get_spark_session("MonitoringPipeline")
+    spark_was_provided = spark is not None
+    if not spark_was_provided:
+        spark = get_spark_session("MonitoringPipeline")
 
     # 1. Load data
-    df_spark = spark.read.format("delta").load(DELTA_TABLE_PATH)
+    df_spark = spark.read.format("delta").load(data_path)
     full_df = df_spark.toPandas()
 
     # Simulate splitting data into reference and production sets
@@ -60,7 +63,7 @@ def run_monitoring_pipeline():
     drift_metrics = calculate_data_drift(reference_df, production_df)
 
     # 3. Push metrics to Pushgateway
-    print(f"Pushing metrics to Prometheus Pushgateway at {PUSHGATEWAY_URL}")
+    print(f"Pushing metrics to Prometheus Pushgateway at {pushgateway_url}...")
     registry = CollectorRegistry()
 
     # Create Gauge metrics for each drift score
@@ -70,10 +73,10 @@ def run_monitoring_pipeline():
         g = Gauge(metric_name, f"Drift metric: {key}", registry=registry)
         g.set(value)
 
-    push_to_gateway(PUSHGATEWAY_URL, job=JOB_NAME, registry=registry)
+    push_to_gateway(pushgateway_url, job=JOB_NAME, registry=registry)
     print("Metrics pushed successfully.")
-
-    spark.stop()
+    if not spark_was_provided:
+        spark.stop()
 
 
 if __name__ == "__main__":

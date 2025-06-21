@@ -93,7 +93,7 @@ EOL
 
 ### Step 2: Set Up Python Virtual Environment
 
-Our services (Airflow and FastAPI) have conflicting dependencies. It is impossible to create a single local environment for all of them. The recommended approach is to set up your local `venv` to match the **FastAPI server** for rapid API development. Airflow will be managed entirely by Docker.
+Our services (Airflow and FastAPI) have conflicting dependencies. It is impossible to create a single local environment for all of them. The recommended approach is to set up your local `venv` to match the **FastAPI server** and testing for rapid API development. Airflow will be managed entirely by Docker.
 
 ```bash
 # Create the virtual environment
@@ -102,8 +102,8 @@ python3 -m venv venv
 # Activate it
 source venv/bin/activate
 
-# Install dependencies for the API server and our core ML logic
-pip install -r requirements/api.txt
+# Install dependencies for the API server, our core ML logic, and testing
+pip install -r requirements/test.txt
 
 # Install the local 'src' code as an editable package
 pip install -e .

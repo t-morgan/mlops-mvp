@@ -9,7 +9,7 @@ MODEL_NAME = "stock_xgboost_predictor"
 MINIMUM_ACCURACY_THRESHOLD = 0.52  # A simple performance gate
 
 
-def run_stock_xgboost_pipeline():
+def run_stock_xgboost_pipeline(data_path=DELTA_TABLE_PATH, model_name=MODEL_NAME):
     """
     A robust training pipeline that:
     1. Splits data into train, validation, and test sets.
@@ -22,7 +22,7 @@ def run_stock_xgboost_pipeline():
 
     df_pandas = (
         spark.read.format("delta")
-        .load(DELTA_TABLE_PATH)
+        .load(data_path)
         .toPandas()
         .set_index("date")
         .sort_index()
@@ -83,9 +83,9 @@ def run_stock_xgboost_pipeline():
                 f"Test accuracy ({test_accuracy:.4f}) is above threshold ({MINIMUM_ACCURACY_THRESHOLD}). Registering model..."
             )
             mlflow.xgboost.log_model(
-                xgb_model=model, artifact_path="model", registered_model_name=MODEL_NAME
+                xgb_model=model, artifact_path="model", registered_model_name=model_name
             )
-            print(f"Model '{MODEL_NAME}' was registered.")
+            print(f"Model '{model_name}' was registered.")
         else:
             print(
                 f"Test accuracy ({test_accuracy:.4f}) is below threshold. Model will NOT be registered."

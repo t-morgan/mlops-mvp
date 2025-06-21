@@ -10,11 +10,11 @@ DELTA_TABLE_PATH = "s3a://delta/istanbul_stock"
 MODEL_NAME = "stock_dql_agent"
 
 
-def run_stock_dql_pipeline():
+def run_stock_dql_pipeline(data_path=DELTA_TABLE_PATH, model_name=MODEL_NAME):
     setup_mlflow(experiment_name="stock_market_comparison")
     spark = get_spark_session("StockDQL")
 
-    df_pandas = spark.read.format("delta").load(DELTA_TABLE_PATH).toPandas()
+    df_pandas = spark.read.format("delta").load(data_path).toPandas()
     df_pandas["date"] = pd.to_datetime(df_pandas["date"])
     df_pandas = df_pandas.set_index("date").sort_index()
 
@@ -77,7 +77,7 @@ def run_stock_dql_pipeline():
         mlflow.log_metric("backtest_profit_percentage", profit_percentage)
 
         # Log the model only after evaluation
-        mlflow.keras.log_model(agent.model, "model", registered_model_name=MODEL_NAME)
+        mlflow.keras.log_model(agent.model, "model", registered_model_name=model_name)
 
     spark.stop()
 

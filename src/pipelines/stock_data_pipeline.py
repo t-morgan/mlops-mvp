@@ -1,16 +1,19 @@
 import pandas as pd
 from common.spark_utils import get_spark_session
 from sklearn.preprocessing import StandardScaler
+from pyspark.sql import SparkSession
 
 RAW_DATA_PATH = "/opt/airflow/data/raw/istanbul_stock_exchange.csv"
 DELTA_TABLE_PATH = "s3a://delta/istanbul_stock"
 
 
-def run_stock_data_pipeline():
+def run_stock_data_pipeline(input_data_path=RAW_DATA_PATH, output_data_path=DELTA_TABLE_PATH, spark: SparkSession = None):
     print(f"Starting Istanbul Stock data pipeline from: {RAW_DATA_PATH}")
-    spark = get_spark_session("StockDataPipeline")
+    spark_was_provided = spark is not None
+    if not spark_was_provided:
+        spark = get_spark_session("StockDataPipeline")
 
-    df = pd.read_csv(RAW_DATA_PATH, index_col="date", parse_dates=True)
+    df = pd.read_csv(input_data_path, index_col="date", parse_dates=True)
     df = df.select_dtypes(include="number")
 
     scaler = StandardScaler()
@@ -29,10 +32,11 @@ def run_stock_data_pipeline():
         df_spark.write.format("delta")
         .mode("overwrite")
         .option("overwriteSchema", "true")
-        .save(DELTA_TABLE_PATH)
+        .save(output_data_path)
     )
-    print(f"Data saved to Delta table: {DELTA_TABLE_PATH}")
-    spark.stop()
+    print(f"Data saved to Delta table: {output_data_path}")
+    if not spark_was_provided:
+        spark.stop()
 
 
 if __name__ == "__main__":

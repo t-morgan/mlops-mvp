@@ -18,13 +18,13 @@ with DAG(
     # Task to run the data processing pipeline
     run_data_pipeline = BashOperator(
         task_id="run_data_pipeline",
-        bash_command="python -m pipelines.data_pipeline",
+        bash_command="python -m pipelines.iris_data_pipeline",
     )
 
     # Task to run the model training pipeline
     run_training_pipeline = BashOperator(
         task_id="run_training_pipeline",
-        bash_command="python -m pipelines.training_pipeline",
+        bash_command="python -m pipelines.iris_training_pipeline",
     )
 
     # Define the task dependencies
