@@ -61,7 +61,6 @@ venv.bak/
 .DS_Store
 mlruns/
 notebooks/.ipynb_checkpoints
-/data/raw/*
 /data/processed/*
 
 # Spark / Java

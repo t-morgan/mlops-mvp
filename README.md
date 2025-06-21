@@ -12,6 +12,7 @@ This MVP demonstrates a complete, orchestrated ML pipeline from data ingestion t
 - [Running the Full MLOps Lifecycle](#running-the-full-mlops-lifecycle)
 - [Observability & Monitoring](#observability--monitoring)
 - [Manual Development Workflow (Without Airflow)](#manual-development-workflow-without-airflow)
+- [Experiment 2: Stock Market Prediction](#experiment-2-stock-market-prediction)
 - [Core Concepts Demonstrated](#core-concepts-demonstrated)
 - [Next Steps & Production Considerations](#next-steps--production-considerations)
 
@@ -242,6 +243,32 @@ For rapid development and debugging of a single script, you can run them directl
 python src/pipelines/training_pipeline.py
 ```
 The code is designed to use `localhost` endpoints when run locally and container service names when run via Airflow.
+
+## Experiment 2: Stock Market Prediction
+
+This second experiment demonstrates the platform's flexibility by tackling a time-series problem and comparing a standard supervised learning model (XGBoost) with a Reinforcement Learning agent (Deep Q-Learner).
+
+### Workflow
+
+1. A new data pipeline ingests and preprocesses the Istanbul Stock Exchange dataset.
+2. The workflow splits into two parallel tasks:
+* **XGBoost Pipeline**: Trains a classifier to predict the next day's market direction.
+* **DQL Pipeline**: Trains a trading agent to maximize profit over the training period.
+3. Both models are logged to the same MLflow experiment for comparison.
+
+### Running the Experiment
+
+1. **Ensure Services are Running**:
+```bash
+docker-compose up -d
+```
+2. **Trigger the Airflow DAG**:
+* Go to the Airflow UI (`http://localhost:8080`).
+* Un-pause and trigger the `stock_experiment_dag`.
+3. **Analyze the Results**:
+* Go to the MLflow UI (`http://localhost:5000`).
+* Navigate to the `stock_market_comparison` experiment. You will see runs for both the XGBoost and DQL models.
+* Note that their primary metrics are different (`accuracy` vs. `final_net_worth`), highlighting the different nature of the models. A full analysis would require a separate evaluation notebook to run back-tests.
 
 ## Core Concepts Demonstrated
 
